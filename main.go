@@ -1,11 +1,11 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
-	"encoding/json"
 
 	"a21hc3NpZ25tZW50/service"
 
@@ -65,44 +65,47 @@ func main() {
 
 	// File upload endpoint
 	router.HandleFunc("/upload", func(w http.ResponseWriter, r *http.Request) {
-		file, handler, err := r.FormFile("file")
+		file, _, err := r.FormFile("file")
 		if err != nil {
-			panic(err)
+			http.Error(w, "Error retrieving the file", http.StatusBadRequest)
+			return
 		}
-
-		question := r.FormValue("question")
-
 		defer file.Close()
 
-		fmt.Println("FILE => ", file)
-		fmt.Println("handler => ", handler)
-		fmt.Println("question => ", question)
+		question := r.FormValue("question")
+		fmt.Println("Question => ", question)
 
+		// Membaca file CSV
 		reader := csv.NewReader(file)
 		records, err := reader.ReadAll()
 		if err != nil {
-			fmt.Println("Error reading records")
+			http.Error(w, "Error reading CSV file", http.StatusInternalServerError)
+			return
 		}
 
-		// Loop to iterate through
-		// and print each of the string slice
-		for _, eachrecord := range records {
-			fmt.Println("DATA : ", eachrecord)
-			fmt.Println("DATA : ", len(eachrecord))
+		// Mengonversi data CSV menjadi map[string][]string
+		table := make(map[string][]string)
+		for _, record := range records {
+			if len(record) > 0 {
+				table[record[0]] = record[1:] // Menyimpan sisa kolom sebagai nilai
+			}
 		}
 
-		// f, err := os.OpenFile(handler.Filename, os.O_WRONLY|os.O_CREATE, 0666)
-		// if err != nil {
-		// 	panic(err)
-		// }
-		// defer f.Close()
-		// _, _ = io.WriteString(w, "File "+fileName+" Uploaded successfully")
-		// _, _ = io.Copy(f, file)
+		// Panggil fungsi AnalyzeData
+		answer, err := aiService.AnalyzeData(table, question, token)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Analysis failed: %v", err), http.StatusInternalServerError)
+			return
+		}
 
-		w.Write([]byte("hello again"))
-
+		// Kirim respons
+		response := map[string]string{
+			"status": "success",
+			"answer": answer,
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
 	}).Methods("POST")
-
 
 	// Chat endpoint
 	router.HandleFunc("/chat", func(w http.ResponseWriter, r *http.Request) {
@@ -114,14 +117,14 @@ func main() {
 			http.Error(w, "Invalid request body", http.StatusBadRequest)
 			return
 		}
-	
+
 		// Panggil fungsi ChatWithAI
 		answer, err := aiService.ChatWithAI(requestBody.Context, requestBody.Query, token)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("AI chat failed: %v", err), http.StatusInternalServerError)
 			return
 		}
-	
+
 		// Kirim respons
 		response := map[string]string{
 			"status": "success",
@@ -130,7 +133,6 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(response)
 	}).Methods("POST")
-	
 
 	// Enable CORS
 	corsHandler := cors.New(cors.Options{

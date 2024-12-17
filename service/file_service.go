@@ -83,4 +83,3 @@ func (s *FileService) ProcessEnergyFile(fileContent string) (map[string]float64,
 
     return result, nil
 }
-
